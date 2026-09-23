@@ -1,0 +1,15 @@
+Project_BI_Kafka/
+├── data/
+│   ├── stock_data.csv       <-- Nguồn 1
+│   ├── oil_prices.json      <-- Nguồn 2
+│   └── raw_notes.txt        <-- Nguồn 3 (TXT yêu cầu của đồ án)
+├── src/
+│   ├── init_kafka_once.bat
+│   ├── producer_kafka.py
+│   ├── consumer_kafka.py
+│   ├── mapreduce_analysis.py
+│   └── app.py (Streamlit)
+├── output/
+│   └── stream_output.csv    <-- Kết quả sau khi consume
+├── requirements.txt
+└── run_project.bat

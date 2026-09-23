@@ -1,0 +1,32 @@
+# Các lệnh dưới đây dùng cho Windows PowerShell.
+# Chạy từ thư mục gốc C:\A\BA_BTL.
+
+# Kích hoạt môi trường Python (sau khi đã chạy .\setup_windows.ps1)
+.\.venv\Scripts\Activate.ps1
+
+# Dừng Spark cũ của dự án (nếu biết PID thì ưu tiên Stop-Process -Id <PID>)
+Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -match 'src[\\/]spark_processor\.py' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+# Xóa trạng thái stream cũ
+Remove-Item -LiteralPath 'checkpoints\spark_market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+
+# Nếu muốn làm mới toàn bộ dữ liệu output
+Remove-Item -LiteralPath 'output\parquet\bronze_market_data' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'output\parquet\market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+
+# Chạy lại Spark
+$env:KAFKA_BOOTSTRAP = 'localhost:9092'
+$env:KAFKA_TOPIC = 'market_data'
+$env:PYSPARK_PYTHON = (Resolve-Path '.\.venv\Scripts\python.exe').Path
+$env:PYSPARK_DRIVER_PYTHON = $env:PYSPARK_PYTHON
+$env:SPARK_LOCAL_IP = '127.0.0.1'
+python .\src\spark_processor.py
+
+# Reset bằng checkpoint mới mà không xóa dữ liệu cũ
+$env:CHECKPOINT_PATH = 'checkpoints\spark_market_metrics_run2'
+python .\src\spark_processor.py
+
+# Chạy producer
+python .\src\producer_kafka.py

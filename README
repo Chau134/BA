@@ -1,0 +1,348 @@
+# 📊 Big Data Analytics & Business Intelligence
+
+## Real-time Market Analytics (Stock Index vs Oil)
+
+---
+
+## 📌 1. Giới thiệu
+
+Dự án xây dựng một hệ thống **phân tích dữ liệu thời gian thực (Real-time Analytics)** nhằm theo dõi mối tương quan giữa:
+
+* 📈 Chỉ số thị trường chứng khoán (Dow Jones, S&P 500, Nasdaq)
+* 🛢️ Giá dầu thô (Crude Oil)
+
+Hệ thống mô phỏng pipeline Big Data hoàn chỉnh:
+
+👉 Data Source → ETL → Kafka → Spark Streaming → Parquet → Dashboard BI
+
+---
+
+## 🎯 2. Mục tiêu
+
+* Thu thập dữ liệu lịch sử từ Yahoo Finance
+* Xử lý & chuẩn hóa dữ liệu
+* Streaming dữ liệu qua Kafka
+* Phân tích real-time bằng Spark
+* Trực quan hóa bằng dashboard BI
+* Hỗ trợ ra quyết định kinh doanh
+
+---
+
+## 🏗️ 3. Kiến trúc hệ thống
+
+```text
+Yahoo Finance (yfinance)
+        ↓
+ETL Pipeline (Pandas)
+        ↓
+CSV (market_data_final.csv)
+        ↓
+Kafka Producer
+        ↓
+Kafka Topic (market_data)
+        ↓
+PySpark Structured Streaming
+        ↓
+Parquet (metrics)
+        ↓
+Streamlit Dashboard
+```
+
+---
+
+## 📂 4. Cấu trúc thư mục
+
+```text
+BA_BTL/
+├── data/
+│   ├── oil_price_raw.json
+│   ├── gold_price_raw.json
+│   └── stock_data.csv
+│
+├── output/
+│   └── market_data_final.csv
+│
+├── src/
+│   ├── producer_kafka.py
+│   └── spark_processor.py
+│
+├── etl_pipeline.py
+├── app.py
+├── kraft.properties
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## ⚙️ 5. Công nghệ sử dụng
+
+* Python (Pandas, PySpark)
+* Apache Kafka (KRaft mode)
+* Parquet (columnar storage)
+* Streamlit + Plotly
+
+---
+
+# 🚀 6. Hướng dẫn chạy ổn định trên Windows PowerShell
+
+## 🔹 Bước 1: Chuẩn bị môi trường
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+.\setup_windows.ps1
+.\.venv\Scripts\Activate.ps1
+```
+
+Yêu cầu: Python 3.10+, JDK 17 hoặc 21 và bản binary Apache Kafka. Đặt biến môi trường `KAFKA_HOME` trỏ tới thư mục Kafka, ví dụ:
+
+```powershell
+[Environment]::SetEnvironmentVariable('KAFKA_HOME', 'C:\tools\kafka', 'User')
+```
+
+Mở PowerShell mới sau khi đặt biến môi trường. Kafka trên Windows dùng các file `.bat` trong `bin\windows`.
+
+---
+
+## 🔹 Bước 2: Reset sạch (chỉ dùng khi pipeline bị lỗi nặng)
+
+```powershell
+Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -match 'spark_processor\.py|producer_kafka\.py|kafka-server-start' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+
+Remove-Item -LiteralPath 'kafka-logs' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'checkpoints\spark_market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'output\parquet\bronze_market_data' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'output\parquet\market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path 'kafka-logs', 'checkpoints\spark_market_metrics' | Out-Null
+```
+
+---
+
+## 🔹 Bước 3: Format Kafka storage (sau reset hoặc lần chạy đầu)
+
+```powershell
+$KafkaBin = Join-Path $env:KAFKA_HOME 'bin\windows'
+$ClusterId = & "$KafkaBin\kafka-storage.bat" random-uuid
+& "$KafkaBin\kafka-storage.bat" format -t $ClusterId -c .\kraft.properties
+```
+
+---
+
+## 🔹 Bước 4: Start Kafka server
+
+```powershell
+$KafkaBin = Join-Path $env:KAFKA_HOME 'bin\windows'
+& "$KafkaBin\kafka-server-start.bat" .\kraft.properties
+```
+
+Mở terminal khác để kiểm tra nhanh:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 9092,9093
+```
+
+Nếu thấy Java listen ở cả 9092 và 9093 là Kafka đã lên đúng.
+
+---
+
+## 🔹 Bước 5: Tạo topic (nếu chưa có)
+
+```powershell
+$KafkaBin = Join-Path $env:KAFKA_HOME 'bin\windows'
+& "$KafkaBin\kafka-topics.bat" --create `
+    --topic market_data `
+    --bootstrap-server localhost:9092 `
+    --partitions 1 `
+    --replication-factor 1
+```
+
+Nếu báo `TopicExistsException` thì bỏ qua.
+
+---
+
+## 🔹 Bước 6: Chạy ETL
+
+```powershell
+python .\etl_pipeline.py
+```
+
+Output:
+
+```text
+output/market_data_final.csv
+```
+
+---
+
+## 🔹 Bước 7: Chạy Spark Streaming (terminal mới)
+
+```powershell
+python .\src\spark_processor.py
+```
+
+---
+
+## 🔹 Bước 8: Chạy Producer (terminal mới)
+
+```powershell
+python .\src\producer_kafka.py
+```
+
+---
+
+## 🔹 Bước 9: Chạy Dashboard (terminal mới)
+
+```powershell
+python -m streamlit run .\app.py --server.port 8501 --server.headless true
+```
+
+Mở:
+
+```text
+http://localhost:8501
+```
+
+---
+
+# 🔥 Thứ tự chạy chuẩn
+
+```text
+1. Kafka
+2. Spark
+3. Producer
+4. Dashboard
+```
+
+---
+
+# ⚠️ 7. Lỗi thường gặp và cách xử lý
+
+## ❗ Không tìm thấy `kafka-storage.bat`
+
+Nguyên nhân: Kafka CLI không có trong PATH.
+
+Cách xử lý:
+
+```powershell
+$env:KAFKA_HOME = 'C:\tools\kafka'
+& "$env:KAFKA_HOME\bin\windows\kafka-storage.bat" random-uuid
+```
+
+---
+
+## ❗ `Invalid cluster.id in ./kafka-logs/meta.properties`
+
+Nguyên nhân: Đang format bằng cluster id mới nhưng thư mục `kafka-logs` còn metadata cũ.
+
+Cách xử lý: thực hiện đúng Bước 2 rồi Bước 3.
+
+---
+
+## ❗ Spark báo `UnknownTopicOrPartitionException`
+
+Nguyên nhân: topic `market_data` chưa tồn tại hoặc broker chưa sẵn sàng.
+
+Cách xử lý:
+
+```powershell
+& "$env:KAFKA_HOME\bin\windows\kafka-topics.bat" --describe --topic market_data --bootstrap-server localhost:9092
+```
+
+Nếu chưa có topic thì tạo lại ở Bước 5.
+
+---
+
+## ❗ Spark báo `Connection ... 9092 could not be established`
+
+Nguyên nhân: Kafka broker bị rớt hoặc chưa bind cổng 9092.
+
+Cách xử lý: kiểm tra lại bằng `Get-NetTCPConnection -State Listen -LocalPort 9092`, sau đó start lại Kafka ở Bước 4.
+
+---
+
+## ❗ `JAVA_GATEWAY_EXITED`
+
+Nguyên nhân: Java version không phù hợp.
+
+Cách xử lý: dùng JDK 17 hoặc 21, đặt đúng `JAVA_HOME`, rồi mở PowerShell mới.
+
+---
+
+## ❗ Lỗi thiếu `stock_close`
+
+Nguyên nhân: CSV có cột `close` nhưng không chuẩn hóa trước khi gửi Kafka.
+
+Cách xử lý: `producer_kafka.py` đã xử lý rename `close -> stock_close`.
+
+---
+
+## ⚠️ Warning Spark `No Partition Defined for Window operation`
+
+Không ảnh hưởng demo vì dữ liệu chạy theo chuỗi thời gian đơn giản.
+
+---
+
+# 📊 8. Business Intelligence Logic
+
+| Điều kiện                     | Alert     |
+| ----------------------------- | --------- |
+| Oil biến động mạnh + corr cao | 🔴 HIGH   |
+| Một trong hai tăng            | 🟡 MEDIUM |
+| Bình thường                   | 🟢 LOW    |
+
+---
+
+## 📌 Insight
+
+* Correlation cao → dầu ảnh hưởng thị trường
+* Correlation thấp → thị trường độc lập
+* Oil tăng mạnh → rủi ro lan sang stock
+
+---
+
+# 📈 9. Kết quả
+
+Dashboard hiển thị:
+
+* Giá stock vs oil
+* Rolling correlation
+* Alert level
+* Business recommendation
+
+---
+
+# ⚡ 10. Hạn chế
+
+* Dữ liệu replay (không phải real API streaming)
+* Chưa scale multi-partition Kafka
+* Chưa có machine learning
+
+---
+
+# 🚀 11. Hướng phát triển
+
+* Streaming trực tiếp từ API
+* Multi-asset analysis
+* Forecasting
+* Deploy cloud (AWS/GCP)
+
+---
+
+# 👨‍💻 12. Tác giả
+
+* Sinh viên: (Tên bạn)
+* Môn: Big Data Analytics & BI
+
+---
+
+# ✅ 13. Kết luận
+
+Hệ thống đã:
+
+* Xây dựng pipeline Big Data hoàn chỉnh
+* Phân tích real-time
+* Hỗ trợ decision-making
+
+---

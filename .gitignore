@@ -1,0 +1,15 @@
+kafka-logs/
+kafka-runtime-logs/
+checkpoints/
+src/checkpoints/
+output/parquet/
+src/output/
+*.log
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.crc
+.DS_Store
+.idea/
+.vscode/

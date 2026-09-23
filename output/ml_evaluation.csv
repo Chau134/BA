@@ -1,0 +1,2 @@
+symbol_filter,label_col,prediction_task,rows_test,class_0_count,class_1_count,baseline_majority_class,baseline_accuracy,auc,accuracy,precision,recall,f1,improvement_over_baseline
+ALL,target_market_risk,CURRENT_MARKET_RISK_CLASSIFICATION,9188,3374,5814,1,0.6327818894209839,0.9878087181585892,0.9586417065737919,0.9597952141240322,0.958641706573792,0.9588495389972892,0.325859817152808

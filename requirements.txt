@@ -1,0 +1,19 @@
+# --- Data Collection & Processing ---
+requests>=2.31.0
+pandas>=2.2.2
+numpy>=1.26.4
+yfinance>=0.2.40
+python-dateutil>=2.9.0
+
+# --- Kafka Streaming ---
+kafka-python-ng>=2.2.2
+
+# --- Spark Streaming ---
+pyspark>=4.0.0
+
+# --- BI Dashboard & Visualization ---
+streamlit>=1.33.0
+plotly>=5.21.0
+
+# --- Parquet support ---
+pyarrow>=15.0.0
