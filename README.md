@@ -10,9 +10,130 @@ Trọng tâm hiện tại của dự án là:
 Classify current market risk state:
 - HIGH RISK
 - NORMAL
-````
+```
 
 Dự án không còn tập trung vào việc dự đoán giá cổ phiếu tăng/giảm trong tương lai, vì bài toán đó có độ nhiễu cao và khó vượt baseline ổn định. Thay vào đó, hệ thống phân loại **trạng thái rủi ro hiện tại của thị trường** dựa trên các đặc trưng như return, volatility, moving average, correlation và alert level.
+
+---
+
+# Chạy nhanh trên máy Windows hiện tại
+
+Máy hiện tại đã có:
+
+* Python 3.12.
+* Java JDK 21.
+* Apache Kafka 4.1.2 tại `C:\A\DOWN\kafka_2.13-4.1.2`.
+
+Không cần tải thêm Java hoặc Kafka. Phần còn thiếu là các thư viện Python trong `requirements.txt`, bao gồm `pyspark`, `yfinance`, `kafka-python-ng`, `streamlit` và `pyarrow`.
+
+## Cài đặt lần đầu
+
+Mở PowerShell và chạy nguyên khối lệnh sau:
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+Set-ExecutionPolicy -Scope Process Bypass
+
+$KafkaDir = 'C:\A\DOWN\kafka_2.13-4.1.2'
+
+if (-not (Test-Path -LiteralPath "$KafkaDir\bin\windows\kafka-server-start.bat")) {
+    throw "Không tìm thấy Kafka tại $KafkaDir"
+}
+
+# Lưu KAFKA_HOME cho các cửa sổ PowerShell mở sau này.
+[Environment]::SetEnvironmentVariable('KAFKA_HOME', $KafkaDir, 'User')
+
+# Dùng ngay trong cửa sổ PowerShell hiện tại.
+$env:KAFKA_HOME = $KafkaDir
+
+# Tạo .venv và cài toàn bộ thư viện Python từ requirements.txt.
+.\setup_windows.ps1 -KafkaHome $KafkaDir
+```
+
+Lệnh `setup_windows.ps1` sẽ tự động chạy tương đương với:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Quá trình cài Python packages cần kết nối Internet và chỉ cần thực hiện một lần.
+
+## Kiểm tra sau khi cài
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+
+.\.venv\Scripts\python.exe -c "import pyspark, yfinance, kafka, streamlit, pyarrow; print('PySpark:', pyspark.__version__); print('yfinance:', yfinance.__version__); print('Python packages: OK')"
+
+java -version
+
+& 'C:\A\DOWN\kafka_2.13-4.1.2\bin\windows\kafka-topics.bat' --version
+```
+
+Kết quả mong đợi:
+
+* Python packages in ra `Python packages: OK`.
+* Java báo phiên bản 21.
+* Kafka báo phiên bản `4.1.2`.
+
+Kafka có thể in thêm cảnh báo Log4j khi kiểm tra phiên bản. Nếu lệnh vẫn trả về `4.1.2` thì Kafka CLI đã hoạt động.
+
+## Chạy toàn bộ hệ thống
+
+Sau khi cài xong, vẫn trong PowerShell tại thư mục dự án:
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+Set-ExecutionPolicy -Scope Process Bypass
+
+$KafkaDir = 'C:\A\DOWN\kafka_2.13-4.1.2'
+.\start_clean.ps1 -KafkaHome $KafkaDir
+```
+
+Script sẽ tự thực hiện theo thứ tự:
+
+1. Khởi động Kafka KRaft nếu cổng `9092` chưa chạy.
+2. Dọn output/checkpoint streaming cũ.
+3. Chạy ETL và tạo dữ liệu demo.
+4. Khởi động Spark Streaming Predictor.
+5. Khởi động Streamlit.
+6. Chạy Kafka Producer.
+
+Dashboard:
+
+```text
+http://localhost:8501
+```
+
+Lần đầu Spark chạy có thể mất thêm thời gian để tải Kafka connector từ Maven. Windows Firewall có thể hỏi quyền truy cập cho Java; cho phép trên mạng riêng.
+
+## Những lần chạy sau
+
+Không cần chạy lại `setup_windows.ps1`. Chỉ chạy:
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+Set-ExecutionPolicy -Scope Process Bypass
+.\start_clean.ps1 -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2'
+```
+
+Muốn giữ output/checkpoint streaming cũ:
+
+```powershell
+.\start_clean.ps1 `
+    -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' `
+    -KeepStreamingData
+```
+
+Muốn train lại model trước khi chạy:
+
+```powershell
+.\start_clean.ps1 `
+    -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' `
+    -RetrainModel
+```
 
 ---
 

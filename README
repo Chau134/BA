@@ -1,5 +1,7 @@
 # 📊 Big Data Analytics & Business Intelligence
 
+> Hướng dẫn cài đặt và chạy đầy đủ trên máy Windows hiện tại nằm ở đầu file `README.md`. Kafka đã có tại `C:\A\DOWN\kafka_2.13-4.1.2`; chỉ cần cài Python packages bằng `.\setup_windows.ps1`.
+
 ## Real-time Market Analytics (Stock Index vs Oil)
 
 ---
