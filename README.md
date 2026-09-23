@@ -24,7 +24,7 @@ Máy hiện tại đã có:
 * Java JDK 21.
 * Apache Kafka 4.1.2 tại `C:\A\DOWN\kafka_2.13-4.1.2`.
 
-Không cần tải thêm Java hoặc Kafka. Phần còn thiếu là các thư viện Python trong `requirements.txt`, bao gồm `pyspark`, `yfinance`, `kafka-python-ng`, `streamlit` và `pyarrow`.
+Không cần tải thêm Java hoặc Kafka và cũng không cần đổi lên Kafka mới nhất. Kafka 4.1.2 phù hợp với dự án sau khi storage cũ từ máy Mac được reset. Phần còn thiếu là các thư viện Python trong `requirements.txt`, bao gồm `pyspark`, `yfinance`, `kafka-python-ng`, `streamlit` và `pyarrow`.
 
 ## Cài đặt lần đầu
 
@@ -80,6 +80,8 @@ Kết quả mong đợi:
 
 Kafka có thể in thêm cảnh báo Log4j khi kiểm tra phiên bản. Nếu lệnh vẫn trả về `4.1.2` thì Kafka CLI đã hoạt động.
 
+Kafka 4.1.2 vẫn có đoạn script Windows gọi `wmic`, trong khi các bản Windows mới không còn công cụ này. `start_clean.ps1` đã tự đặt `KAFKA_HEAP_OPTS` để bỏ qua đoạn kiểm tra cũ; không cần cài lại `wmic`.
+
 ## Chạy toàn bộ hệ thống
 
 Sau khi cài xong, vẫn trong PowerShell tại thư mục dự án:
@@ -109,6 +111,41 @@ http://localhost:8501
 
 Lần đầu Spark chạy có thể mất thêm thời gian để tải Kafka connector từ Maven. Windows Firewall có thể hỏi quyền truy cập cho Java; cho phép trên mạng riêng.
 
+## Quan sát dữ liệu được đẩy vào Kafka
+
+Mở một cửa sổ PowerShell mới trong khi Kafka và producer đang chạy. Xem các message mới kể từ lúc mở consumer:
+
+```powershell
+Set-Location 'C:\A\BA_BTL'
+Set-ExecutionPolicy -Scope Process Bypass
+
+.\watch_kafka.ps1 `
+    -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2'
+```
+
+Muốn đọc lại toàn bộ message đang còn trong topic từ offset đầu tiên:
+
+```powershell
+.\watch_kafka.ps1 `
+    -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' `
+    -FromBeginning
+```
+
+Consumer đọc trực tiếp partition `0` và hiển thị timestamp, partition, offset, key cùng JSON của từng bản ghi. Nhấn `Ctrl+C` để dừng quan sát.
+
+Có thể chạy trực tiếp Kafka CLI nếu không dùng script:
+
+```powershell
+& 'C:\A\DOWN\kafka_2.13-4.1.2\bin\windows\kafka-console-consumer.bat' `
+    --bootstrap-server localhost:9092 `
+    --topic market_data `
+    --partition 0 `
+    --from-beginning `
+    --property print.timestamp=true `
+    --property print.partition=true `
+    --property print.offset=true
+```
+
 ## Những lần chạy sau
 
 Không cần chạy lại `setup_windows.ps1`. Chỉ chạy:
@@ -134,6 +171,16 @@ Muốn train lại model trước khi chạy:
     -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' `
     -RetrainModel
 ```
+
+Nếu Kafka báo storage được tạo bởi phiên bản mới hơn, reset riêng dữ liệu Kafka cũ rồi chạy lại:
+
+```powershell
+.\start_clean.ps1 `
+    -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' `
+    -ResetKafkaStorage
+```
+
+Tùy chọn này xóa message Kafka cũ trong `kafka-logs`, nhưng không xóa dữ liệu CSV, model hoặc mã nguồn.
 
 ---
 
@@ -242,6 +289,7 @@ BA_BTL/
 ├── kraft.properties
 ├── setup_windows.ps1
 ├── start_clean.ps1
+├── watch_kafka.ps1
 ├── start_clean.sh            # script cũ dành cho macOS/Linux
 │
 ├── src/

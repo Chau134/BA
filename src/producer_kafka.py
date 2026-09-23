@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
 import pandas as pd
 from kafka import KafkaProducer
+
+
+# Windows PowerShell may expose a legacy cp1252 console. Force UTF-8 so status
+# messages cannot stop the producer after a Kafka record has been sent.
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")

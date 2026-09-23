@@ -6,7 +6,8 @@ param(
     [string]$Pipeline = "ml",
     [string]$KafkaHome = $env:KAFKA_HOME,
     [switch]$RetrainModel,
-    [switch]$KeepStreamingData
+    [switch]$KeepStreamingData,
+    [switch]$ResetKafkaStorage
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,6 +132,8 @@ function Invoke-Python {
 $Python = Resolve-Python
 $env:PYSPARK_PYTHON = $Python
 $env:PYSPARK_DRIVER_PYTHON = $Python
+$env:PYTHONUTF8 = Get-EnvOrDefault "PYTHONUTF8" "1"
+$env:PYTHONIOENCODING = Get-EnvOrDefault "PYTHONIOENCODING" "utf-8"
 $env:SPARK_LOCAL_IP = Get-EnvOrDefault "SPARK_LOCAL_IP" "127.0.0.1"
 $env:KAFKA_BOOTSTRAP = Get-EnvOrDefault "KAFKA_BOOTSTRAP" "localhost:9092"
 $env:KAFKA_TOPIC = Get-EnvOrDefault "KAFKA_TOPIC" "market_data"
@@ -146,6 +149,23 @@ $env:DEMO_START_DATE = Get-EnvOrDefault "DEMO_START_DATE" "2024-01-01"
 $env:DEMO_ROWS_PER_SYMBOL = Get-EnvOrDefault "DEMO_ROWS_PER_SYMBOL" "120"
 $env:STREAM_SYMBOL_FILTER = Get-EnvOrDefault "STREAM_SYMBOL_FILTER" $env:DEMO_SYMBOLS
 
+# Kafka 4.1.x still calls the removed Windows `wmic` command when this value
+# is empty. Defining it explicitly makes the bundled .bat scripts work on
+# current Windows 10/11 versions.
+$env:KAFKA_HEAP_OPTS = Get-EnvOrDefault "KAFKA_HEAP_OPTS" "-Xms512m -Xmx1g"
+$env:LOG_DIR = Get-EnvOrDefault "LOG_DIR" (Join-Path $ProjectRoot "kafka-runtime-logs\broker")
+New-Item -ItemType Directory -Force -Path $env:LOG_DIR | Out-Null
+
+# Use an absolute file URI so Log4j can find its Windows configuration even
+# when Kafka is launched from the project directory.
+if ($KafkaHome) {
+    $kafkaLogConfig = Join-Path $KafkaHome "config\log4j2.yaml"
+    if (Test-Path -LiteralPath $kafkaLogConfig -PathType Leaf) {
+        $kafkaLogUri = ([System.Uri][System.IO.Path]::GetFullPath($kafkaLogConfig)).AbsoluteUri
+        $env:KAFKA_LOG4J_OPTS = Get-EnvOrDefault "KAFKA_LOG4J_OPTS" "-Dlog4j2.configurationFile=$kafkaLogUri"
+    }
+}
+
 $java = Get-Command java.exe -ErrorAction SilentlyContinue
 if (-not $java) {
     throw "Java was not found. Install JDK 17 or 21 and set JAVA_HOME."
@@ -157,6 +177,15 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 
 New-Item -ItemType Directory -Force -Path "output", "kafka-runtime-logs" | Out-Null
 Stop-OldProjectProcesses
+
+if ($ResetKafkaStorage) {
+    if (Test-TcpPort -Port 9092) {
+        throw "Cannot reset Kafka storage while port 9092 is open. Stop the existing Kafka process first."
+    }
+    Remove-SafeProjectDirectory "kafka-logs"
+    New-Item -ItemType Directory -Force -Path (Join-Path $ProjectRoot "kafka-logs") | Out-Null
+    Write-Host "Kafka storage reset requested. A cluster compatible with the selected Kafka version will be formatted."
+}
 
 if (-not (Test-TcpPort -Port 9092)) {
     $KafkaStorage = Resolve-KafkaTool "kafka-storage"
@@ -199,6 +228,18 @@ if (-not (Test-TcpPort -Port 9092)) {
         Start-Sleep -Seconds 1
     }
     if (-not (Test-TcpPort -Port 9092)) {
+        $kafkaErrorLog = Join-Path $ProjectRoot "kafka-runtime-logs\kafka.err.log"
+        $kafkaOutputLog = Join-Path $ProjectRoot "kafka-runtime-logs\kafka.out.log"
+        $startupLog = ""
+        if (Test-Path -LiteralPath $kafkaErrorLog) {
+            $startupLog += Get-Content -LiteralPath $kafkaErrorLog -Raw -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $kafkaOutputLog) {
+            $startupLog += Get-Content -LiteralPath $kafkaOutputLog -Raw -ErrorAction SilentlyContinue
+        }
+        if ($startupLog -match "only supports versions|Unable to apply FeatureLevelRecord|MappedByteBuffer\.duplicate|Found invalid offset during recovery") {
+            throw "Kafka storage is incompatible or corrupt. Run again with -ResetKafkaStorage."
+        }
         throw "Kafka did not open port 9092. Check kafka-runtime-logs\kafka.err.log."
     }
     Write-Host "Kafka started (PID $($KafkaProcess.Id))."
