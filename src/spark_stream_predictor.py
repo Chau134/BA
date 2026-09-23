@@ -32,6 +32,10 @@ STREAM_SYMBOL_FILTER = os.getenv("STREAM_SYMBOL_FILTER", "").strip()
 
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
 SPARK_KAFKA_PACKAGE = os.getenv("SPARK_KAFKA_PACKAGE", "")
+SPARK_WINDOWS_FS_PACKAGE = os.getenv(
+    "SPARK_WINDOWS_FS_PACKAGE",
+    "com.globalmentor:hadoop-bare-naked-local-fs:0.1.0",
+)
 
 
 INPUT_SCHEMA = StructType(
@@ -104,7 +108,24 @@ def build_spark() -> SparkSession:
         spark_version = pyspark.__version__.split("+")[0]
         kafka_package = f"org.apache.spark:spark-sql-kafka-0-10_2.13:{spark_version}"
 
-    spark = builder.config("spark.jars.packages", kafka_package).getOrCreate()
+    packages = [kafka_package]
+    if os.name == "nt":
+        packages.append(SPARK_WINDOWS_FS_PACKAGE)
+        builder = builder.config(
+                "spark.sql.streaming.checkpointFileManagerClass",
+                "org.apache.spark.sql.execution.streaming.checkpointing."
+                "FileSystemBasedCheckpointFileManager",
+            )
+
+    spark = builder.config("spark.jars.packages", ",".join(packages)).getOrCreate()
+    if os.name == "nt":
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        hadoop_conf.set(
+            "fs.file.impl",
+            "com.globalmentor.apache.hadoop.fs.BareLocalFileSystem",
+        )
+        hadoop_conf.set("fs.file.impl.disable.cache", "true")
+        hadoop_conf.set("fs.file.checksum.verify", "false")
     spark.sparkContext.setLogLevel("WARN")
 
     return spark
@@ -357,7 +378,7 @@ def main() -> None:
     stream_df = read_kafka_stream(spark)
 
     print("=" * 80)
-    print("Spark Streaming Current Market Risk Predictor is running...")
+    print("Spark Streaming Current Market Risk Predictor is initializing...")
     print(f"- Kafka: {KAFKA_BOOTSTRAP}")
     print(f"- Topic: {KAFKA_TOPIC}")
     print(f"- Starting offsets: {STARTING_OFFSETS}")
@@ -380,6 +401,8 @@ def main() -> None:
         .trigger(processingTime=TRIGGER_INTERVAL)
         .start()
     )
+
+    print("Spark streaming query is active.", flush=True)
 
     query.awaitTermination()
 

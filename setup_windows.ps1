@@ -77,12 +77,18 @@ $env:PYSPARK_PYTHON = $venvPython
 $env:PYSPARK_DRIVER_PYTHON = $venvPython
 $env:SPARK_LOCAL_IP = "127.0.0.1"
 
+$hadoopInitializer = Join-Path $ProjectRoot "scripts\Initialize-HadoopWindows.ps1"
+$resolvedHadoopHome = & $hadoopInitializer -ProjectRoot $ProjectRoot
+$env:HADOOP_HOME = $resolvedHadoopHome
+$env:Path = "$resolvedHadoopHome\bin;$env:Path"
+
 Write-Host ""
 Write-Host "Environment check"
 Write-Host "  Python:    $venvPython"
 & $venvPython --version
 Write-Host "  JAVA_HOME: $resolvedJavaHome"
 & (Join-Path $resolvedJavaHome "bin\java.exe") -version
+Write-Host "  HADOOP_HOME: $resolvedHadoopHome"
 
 if ($KafkaHome) {
     $KafkaHome = [System.IO.Path]::GetFullPath($KafkaHome)

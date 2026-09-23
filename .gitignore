@@ -6,6 +6,7 @@ output/parquet/
 src/output/
 *.log
 .venv/
+.runtime/
 __pycache__/
 .pytest_cache/
 *.py[cod]

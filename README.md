@@ -111,6 +111,10 @@ http://localhost:8501
 
 Lần đầu Spark chạy có thể mất thêm thời gian để tải Kafka connector từ Maven. Windows Firewall có thể hỏi quyền truy cập cho Java; cho phép trên mạng riêng.
 
+Trên Windows, script tự tạo `HADOOP_HOME` cục bộ trong `.runtime`, biên dịch helper `winutils.exe` tối thiểu và dùng filesystem Java thuần `hadoop-bare-naked-local-fs`. Không cần tải Hadoop hoặc `hadoop.dll` thủ công. Lần chạy đầu cần Internet để Spark tải Kafka connector và filesystem JAR từ Maven; các lần sau Spark dùng cache.
+
+Script chỉ báo hoàn tất sau khi Spark đã khởi động streaming query và ghi được file Parquet mới. Khi thấy dòng `Spark output is ready`, tải lại dashboard tại `http://localhost:8501` để xem prediction.
+
 ## Quan sát dữ liệu được đẩy vào Kafka
 
 Mở một cửa sổ PowerShell mới trong khi Kafka và producer đang chạy. Xem các message mới kể từ lúc mở consumer:

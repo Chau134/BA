@@ -21,6 +21,10 @@ from pyspark.sql import functions as F
 
 APP_NAME = os.getenv("SPARK_ML_APP_NAME", "Current-Market-Risk-Spark-ML-Training")
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
+SPARK_WINDOWS_FS_PACKAGE = os.getenv(
+    "SPARK_WINDOWS_FS_PACKAGE",
+    "com.globalmentor:hadoop-bare-naked-local-fs:0.1.0",
+)
 
 INPUT_PATH = os.getenv("ML_INPUT_PATH", "output/market_analysis_results.csv")
 
@@ -73,13 +77,25 @@ FEATURE_COLUMNS = [
 
 
 def build_spark() -> SparkSession:
-    spark = (
+    builder = (
         SparkSession.builder.appName(APP_NAME)
         .master(SPARK_MASTER)
         .config("spark.sql.shuffle.partitions", "4")
         .config("spark.sql.session.timeZone", "UTC")
-        .getOrCreate()
     )
+
+    if os.name == "nt":
+        builder = builder.config("spark.jars.packages", SPARK_WINDOWS_FS_PACKAGE)
+
+    spark = builder.getOrCreate()
+    if os.name == "nt":
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        hadoop_conf.set(
+            "fs.file.impl",
+            "com.globalmentor.apache.hadoop.fs.BareLocalFileSystem",
+        )
+        hadoop_conf.set("fs.file.impl.disable.cache", "true")
+        hadoop_conf.set("fs.file.checksum.verify", "false")
 
     spark.sparkContext.setLogLevel("WARN")
     return spark

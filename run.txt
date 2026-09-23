@@ -1,32 +1,30 @@
-# Các lệnh dưới đây dùng cho Windows PowerShell.
-# Chạy từ thư mục gốc C:\A\BA_BTL.
+# CAC LENH CHAY DU AN TREN WINDOWS POWERSHELL
+# File nay dung de sao chep nhanh lenh. Huong dan chi tiet nam trong README.md.
 
-# Kích hoạt môi trường Python (sau khi đã chạy .\setup_windows.ps1)
-.\.venv\Scripts\Activate.ps1
+# 1. Cai dat moi truong Python (chi can chay lan dau)
+Set-Location 'C:\A\BA_BTL'; Set-ExecutionPolicy -Scope Process Bypass; .\setup_windows.ps1
 
-# Dừng Spark cũ của dự án (nếu biết PID thì ưu tiên Stop-Process -Id <PID>)
-Get-CimInstance Win32_Process |
-    Where-Object { $_.CommandLine -match 'src[\\/]spark_processor\.py' } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+# 2. Chay toan bo he thong: Kafka + Spark + Streamlit + Producer
+# Dung -ResetKafkaStorage o lan chay dau hoac khi Kafka bao storage khong tuong thich.
+# Cho den khi thay dong "Spark output is ready" roi mo dashboard.
+Set-Location 'C:\A\BA_BTL'; Set-ExecutionPolicy -Scope Process Bypass; .\start_clean.ps1 -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' -ResetKafkaStorage
 
-# Xóa trạng thái stream cũ
-Remove-Item -LiteralPath 'checkpoints\spark_market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+# Nhung lan chay sau, giu lai du lieu Kafka thi dung lenh nay
+Set-Location 'C:\A\BA_BTL'; Set-ExecutionPolicy -Scope Process Bypass; .\start_clean.ps1 -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2'
 
-# Nếu muốn làm mới toàn bộ dữ liệu output
-Remove-Item -LiteralPath 'output\parquet\bronze_market_data' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath 'output\parquet\market_metrics' -Recurse -Force -ErrorAction SilentlyContinue
+# 3. Quan sat du lieu Kafka (chay trong PowerShell thu hai)
+Set-Location 'C:\A\BA_BTL'; Set-ExecutionPolicy -Scope Process Bypass; .\watch_kafka.ps1 -KafkaHome 'C:\A\DOWN\kafka_2.13-4.1.2' -FromBeginning
 
-# Chạy lại Spark
-$env:KAFKA_BOOTSTRAP = 'localhost:9092'
-$env:KAFKA_TOPIC = 'market_data'
-$env:PYSPARK_PYTHON = (Resolve-Path '.\.venv\Scripts\python.exe').Path
-$env:PYSPARK_DRIVER_PYTHON = $env:PYSPARK_PYTHON
-$env:SPARK_LOCAL_IP = '127.0.0.1'
-python .\src\spark_processor.py
+# 4. Mo dashboard Streamlit
+Start-Process 'http://localhost:8501/'
 
-# Reset bằng checkpoint mới mà không xóa dữ liệu cũ
-$env:CHECKPOINT_PATH = 'checkpoints\spark_market_metrics_run2'
-python .\src\spark_processor.py
+# 5. Kiem tra cac cong dich vu
+Test-NetConnection localhost -Port 9092
+Test-NetConnection localhost -Port 8501
 
-# Chạy producer
-python .\src\producer_kafka.py
+# 6. Xem log neu dich vu khong khoi dong
+Get-Content -LiteralPath '.\kafka-runtime-logs\kafka.err.log' -Tail 100
+Get-Content -LiteralPath '.\kafka-runtime-logs\spark.err.log' -Tail 100
+Get-Content -LiteralPath '.\kafka-runtime-logs\streamlit.err.log' -Tail 100
+
+# Luu y: giu cua so PowerShell dang chay start_clean.ps1 mo trong suot thoi gian su dung.

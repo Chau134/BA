@@ -134,6 +134,7 @@ $env:PYSPARK_PYTHON = $Python
 $env:PYSPARK_DRIVER_PYTHON = $Python
 $env:PYTHONUTF8 = Get-EnvOrDefault "PYTHONUTF8" "1"
 $env:PYTHONIOENCODING = Get-EnvOrDefault "PYTHONIOENCODING" "utf-8"
+$env:PYTHONUNBUFFERED = Get-EnvOrDefault "PYTHONUNBUFFERED" "1"
 $env:SPARK_LOCAL_IP = Get-EnvOrDefault "SPARK_LOCAL_IP" "127.0.0.1"
 $env:KAFKA_BOOTSTRAP = Get-EnvOrDefault "KAFKA_BOOTSTRAP" "localhost:9092"
 $env:KAFKA_TOPIC = Get-EnvOrDefault "KAFKA_TOPIC" "market_data"
@@ -174,6 +175,13 @@ if (-not $env:JAVA_HOME -or -not (Test-Path -LiteralPath (Join-Path $env:JAVA_HO
     $env:JAVA_HOME = Split-Path -Parent (Split-Path -Parent $java.Source)
 }
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
+
+# Spark/Hadoop expects HADOOP_HOME and winutils.exe on Windows, including in
+# local mode when downloaded Kafka connector JARs are assigned permissions.
+$hadoopInitializer = Join-Path $ProjectRoot "scripts\Initialize-HadoopWindows.ps1"
+$resolvedHadoopHome = & $hadoopInitializer -ProjectRoot $ProjectRoot
+$env:HADOOP_HOME = $resolvedHadoopHome
+$env:Path = "$resolvedHadoopHome\bin;$env:Path"
 
 New-Item -ItemType Directory -Force -Path "output", "kafka-runtime-logs" | Out-Null
 Stop-OldProjectProcesses
@@ -281,18 +289,36 @@ else {
 }
 
 Write-Host "Starting Spark ($Pipeline pipeline)..."
+$sparkOutputLog = Join-Path $ProjectRoot "kafka-runtime-logs\spark.out.log"
+$sparkErrorLog = Join-Path $ProjectRoot "kafka-runtime-logs\spark.err.log"
+$sparkStartedAtUtc = [DateTime]::UtcNow
 $SparkProcess = Start-Process -FilePath $Python `
     -ArgumentList @($sparkScript) `
     -WorkingDirectory $ProjectRoot `
-    -RedirectStandardOutput (Join-Path $ProjectRoot "kafka-runtime-logs\spark.out.log") `
-    -RedirectStandardError (Join-Path $ProjectRoot "kafka-runtime-logs\spark.err.log") `
+    -RedirectStandardOutput $sparkOutputLog `
+    -RedirectStandardError $sparkErrorLog `
     -WindowStyle Hidden `
     -PassThru
 
-Start-Sleep -Seconds 12
-if ($SparkProcess.HasExited) {
-    throw "Spark exited early. Check kafka-runtime-logs\spark.err.log."
+$sparkReadyPattern = "Spark streaming query is active."
+$sparkDeadline = [DateTime]::UtcNow.AddSeconds(120)
+$sparkReady = $false
+while ([DateTime]::UtcNow -lt $sparkDeadline) {
+    $SparkProcess.Refresh()
+    if ($SparkProcess.HasExited) {
+        throw "Spark exited early. Check kafka-runtime-logs\spark.err.log."
+    }
+    if (Test-Path -LiteralPath $sparkOutputLog -PathType Leaf) {
+        $sparkReady = [bool](Select-String -LiteralPath $sparkOutputLog -SimpleMatch $sparkReadyPattern -Quiet)
+        if ($sparkReady) { break }
+    }
+    Start-Sleep -Seconds 2
 }
+if (-not $sparkReady) {
+    Stop-Process -Id $SparkProcess.Id -Force -ErrorAction SilentlyContinue
+    throw "Spark did not become ready within 120 seconds. Check kafka-runtime-logs\spark.err.log."
+}
+Write-Host "Spark is ready (PID $($SparkProcess.Id))."
 
 Write-Host "Starting Streamlit dashboard..."
 $DashboardProcess = Start-Process -FilePath $Python `
@@ -310,6 +336,33 @@ if ($DashboardProcess.HasExited) {
 
 Write-Host "Starting Kafka producer in this terminal..."
 Invoke-Python @("src\producer_kafka.py")
+
+$streamOutputDirectory = if ($Pipeline -eq "ml") {
+    Join-Path $ProjectRoot "output\parquet\market_predictions"
+}
+else {
+    Join-Path $ProjectRoot "output\parquet\market_metrics"
+}
+$outputDeadline = [DateTime]::UtcNow.AddSeconds(120)
+$freshOutput = $null
+while ([DateTime]::UtcNow -lt $outputDeadline) {
+    $SparkProcess.Refresh()
+    if ($SparkProcess.HasExited) {
+        throw "Spark stopped before writing output. Check kafka-runtime-logs\spark.err.log."
+    }
+    if (Test-Path -LiteralPath $streamOutputDirectory -PathType Container) {
+        $freshOutput = Get-ChildItem -LiteralPath $streamOutputDirectory -Filter "*.parquet" -File `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTimeUtc -ge $sparkStartedAtUtc } |
+            Select-Object -First 1
+        if ($freshOutput) { break }
+    }
+    Start-Sleep -Seconds 2
+}
+if (-not $freshOutput) {
+    throw "Spark did not write fresh output within 120 seconds. Check kafka-runtime-logs\spark.err.log."
+}
+Write-Host "Spark output is ready: $streamOutputDirectory"
 
 Write-Host ""
 Write-Host "Producer finished."
